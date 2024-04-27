@@ -1,0 +1,8 @@
+{
+    "name@example.com": {
+        "password": "password"
+    },
+    "name2@example.com": {
+        "password": "password"
+    }
+}

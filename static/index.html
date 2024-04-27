@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Passbox</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #22382b 0%, #162320 100%);
+            color: #fff;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .container {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            width: 61.8%;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        tr:nth-child(even) {
+            background-color: #5c5c5c;
+        }
+        th {
+            background-color: #439157;
+            color: white;
+        }
+        input, button {
+            margin: 10px 0;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+        }
+        input {
+            width: calc(100% - 24px);
+        }
+        button {
+            cursor: pointer;
+            background-color: #1d3f30;
+            color: white;
+            width: 100%;
+        }
+        h2 {
+            margin-bottom: 20px;
+        }
+        #fileList {
+            margin-top: 20px;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+<div id="loginForm">
+    <h3>Login</h3>
+    <input type="email" id="email" placeholder="Email" required>
+    <input type="password" id="loginPassword" placeholder="Password" required>
+    <button type="button" onclick="login()">Login</button>
+</div>    
+<div class="container">
+    <h2>Passbox</h2>
+    <div id="fileList"></div>
+    <form id="actionForm" enctype="multipart/form-data">
+        <input type="file" id="file">
+        <button type="button" onclick="uploadFile()">Upload</button>
+        <button type="button" onclick="downloadFile()" class="button">Download</button>
+    </form>
+    <div id="selectionFeedback"></div>
+    <div id="debugMessage"></div>    
+</div>
+<script>
+    function login() {
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('loginPassword').value;
+        fetch('/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ email: email, password: password })
+        }).then(response => response.json())
+        .then(data => {
+            if (data.message === 'Login successful') {
+                document.getElementById('loginForm').style.display = 'none';
+                document.querySelector('.container').style.display = 'block';
+                fetchFiles();
+            }
+        });
+    }
+    function showResponse(message, isSuccess, fullMessage = '') {
+        const messageDiv = document.getElementById('debugMessage');
+        const fullResponseText = fullMessage ? `\nFull response: ${fullMessage}` : '';
+        messageDiv.textContent = `${message}${fullResponseText}`;
+        messageDiv.style.color = isSuccess ? 'green' : 'red';
+    }
+    function uploadFile() {
+        const formData = new FormData();
+        const fileInput = document.getElementById('file');
+        if (fileInput.files.length > 0) {
+            formData.append('file', fileInput.files[0]);
+            fetch('/upload', {
+                method: 'POST',
+                body: formData,
+            }).then(response => response.json())
+            .then(data => {
+                if (data.message) {
+                    showResponse(data.message, true);
+                    fileInput.value = '';
+                    fetchFiles();
+                } else if (data.error) {
+                    showResponse('Failed to upload file.', false, JSON.stringify(data));
+                } else {
+                    showResponse('Failed to upload file.', false);
+                }
+            }).catch(error => showResponse(error.toString(), false));
+        }
+    }
+    function downloadFile() {
+        const selectedFileInput = document.querySelector('input[name="fileSelection"]:checked');
+        if (!selectedFileInput) {
+            showResponse('No file selected for download.', false);
+            return;
+        }
+        const selectedFile = selectedFileInput.value;
+        const encodedFileName = encodeURIComponent(selectedFile);
+
+        fetch(`/download?filename=${encodedFileName}`, {
+            method: 'GET',
+        }).then(response => {
+            if (response.ok) {
+                response.blob().then(blob => {
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = selectedFile;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    showResponse('File successfully downloaded.', true);
+                });
+            } else {
+                response.json().then(data => {
+                    if (data.error) {
+                        showResponse('Failed to download file.', false, JSON.stringify(data));
+                    } else {
+                        showResponse('Failed to download file.', false);
+                    }
+                }).catch(() => {
+                    showResponse('Failed to download file. The server did not return a detailed error.', false);
+                });
+            }
+        }).catch(error => showResponse(error.toString(), false));
+        fetchFiles();
+    }
+    function fetchFiles() {
+        fetch('/files', {
+            method: 'GET'
+        }).then(response => response.json())
+        .then(data => {
+            let html = `<table><tr><th>File Name</th><th>Select</th></tr>`;
+            data.forEach(file => {
+                html += `<tr>
+                            <td>${file}</td>
+                            <td><input type="radio" name="fileSelection" value="${file}" onchange="selectFile('${file}')"></td>
+                        </tr>`;
+            });
+            html += `</table>`;
+            document.getElementById('fileList').innerHTML = html;
+            const feedbackDiv = document.createElement('div');
+            feedbackDiv.id = 'selectionFeedback';
+            feedbackDiv.style.color = 'lightgreen';
+            document.querySelector('.container').appendChild(feedbackDiv);
+        });
+    }
+    function selectFile(filename) {
+        fetch('/select_file', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ filename: filename })
+        }).then(response => response.json())
+        .then(data => {
+            const feedbackDiv = document.getElementById('selectionFeedback');
+            feedbackDiv.textContent = `Selected file: ${filename}`;
+    });
+    }
+</script>
+</body>
+</html>
